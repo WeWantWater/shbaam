@@ -21,7 +21,6 @@ matrix:
       sudo: required
       
     - os: linux
-    dist: trusty
     sudo: required
     python: '3.6'
     
