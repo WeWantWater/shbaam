@@ -19,6 +19,12 @@ matrix:
     - os: linux
       language: generic
       sudo: required
+      
+    - os: linux
+    dist: trusty
+    sudo: required
+    python: '3.6'
+    
     - os: osx
       language: generic
   allow_failures:
