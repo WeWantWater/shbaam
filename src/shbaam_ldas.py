@@ -14,11 +14,10 @@
 #*******************************************************************************
 #Import Python modules
 #*******************************************************************************
-import sys
 import os.path
 import datetime
 import requests
-
+import sys
 
 #*******************************************************************************
 #Declaration of variables (given as command line arguments)
