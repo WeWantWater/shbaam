@@ -67,17 +67,17 @@ before_install:
 - python --version
 - ls -l $(which python)
 - ls -l $(which -a python)
-- which pip
-- pip --version
-- ls -l $(which pip)
-- ls -l $(which -a pip)
+- which pip3
+- pip3 --version
+- ls -l $(which pip3)
+- ls -l $(which -a pip3)
 
 
 #*******************************************************************************
 #Installing SHBAAM
 #*******************************************************************************
 install:
-- sudo pip install -r requirements.pip
+- sudo pip3 install -r requirements.pip
 
 
 #*******************************************************************************
