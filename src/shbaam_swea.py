@@ -182,12 +182,12 @@ def outputNC(output_file, nc4_file, total, interest_lon, interest_lat, time_step
 if __name__ == "__main__":
     files = sys.argv[1:]
     """
-    files[0]: concatenating netCDF4 files
+    files[0]: concatenated netCDF4 file
     files[1]: given shapefile ('../input/SERVIR_STK/Nepal.shp')
     files[2]: output shapefile with all grid cells from nc4
     files[3]: output csv file
     files[4]: output nc file
-    files[5]: specify the variables
+    files[5:]: specify variables if necessary, otherwise all variables are handled
     """
     #open netCDF4 file
     nc4_file = Dataset(files[0], 'r', format="NETCDF4") #concatenating files
