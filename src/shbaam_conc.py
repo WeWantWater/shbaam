@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 from netCDF4 import Dataset, num2date, date2num
 import sys
 
@@ -12,9 +13,11 @@ def copy_static(i,o):
                                                 
         #copy variable attributes
         ovar.setncatts({an: ivar.getncattr(an) for an in ivar.ncattrs()})
-        ovar[:] = ivar[:]
+        if vn in ["lat", "lon"]:
+            ovar[:] = ivar[:]
 
 def concat(i, o):
+    dimensional = ["lat", "lon", "time"]
     for (name, ovar) in o.variables.items():
         if name == "time": #unit->hours
             #calculate time of input files
@@ -23,10 +26,9 @@ def concat(i, o):
                     ivar = fin.variables[name]
                     ovar[index] = date2num(num2date(ivar[:], ivar.units, ivar.calendar)[0], ovar.units, ovar.calendar)
 
-        elif name in ("Canint", "SWE"):
+        elif name not in dimensional:
             for index, fin in enumerate(i):
-                if index != 0:
-                    ovar[index] = fin.variables[name][:]
+                ovar[index] = fin.variables[name][:]
 
             
 if __name__ == "__main__":
