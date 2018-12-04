@@ -91,7 +91,6 @@ if __name__ == "__main__":
     2: csv_file 2
     3: relative tolerance
     4: absolute tolerance
-    5: variables you want to check
     '''
     len_arg = len(sys.argv)
     if len_arg < 3 or len_arg > 5:
