@@ -265,8 +265,15 @@ for water_anomaly_var in correct_avail_vars:
           abs_diff=numpy.absolute(correct_values-test_values)
           abs_diff_max=max(numpy.max(abs_diff),abs_diff_max)
 
-          rel_diff=numpy.sum(numpy.multiply(abs_diff,abs_diff,where=correct_masks))  \
-                 /numpy.sum(numpy.multiply(correct_values,correct_values,where=correct_masks))
+          #If the weighted value for the correct data is 0, it causes a division by 0 error
+          #this case is circumvented because there's nothing wrong with all data being 0 for a given
+          #variable so long as it's consistent between the two files. 
+          correct_values_weight = numpy.sum(numpy.multiply(correct_values,correct_values,where=correct_masks))
+          if correct_values_weight:
+               rel_diff=numpy.sum(numpy.multiply(abs_diff,abs_diff,where=correct_masks))  \
+                      /correct_values_weight
+          else:
+               rel_diff = 0
           #Using the mask helps avoid the 'overflow' warning at runtime by performing
           #operations only for values that are not masked
           rel_diff=math.sqrt(rel_diff)
