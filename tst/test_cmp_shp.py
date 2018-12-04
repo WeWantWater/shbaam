@@ -2,8 +2,6 @@
 #test_cmp_shp.py
 
 #Compare two shapefiles
-#1. Check the geometries
-#2
 
 import sys
 import fiona
