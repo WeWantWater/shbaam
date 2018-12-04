@@ -30,6 +30,8 @@ matrix:
 #*******************************************************************************
 env:
 - TST_PUB_DWNL='./tst_pub_dwnl_David_etal_201x_SER.sh' TST_PUB_REPR='./tst_pub_repr_David_etal_201x_SER.sh'
+- secure: "slAmV0fjb1BTGRIqnrvtTlWVeY70e1w0cP4yaYrzrNhQQ6ifY1caiL2abdqvX/tiq6IMmtEadkhtSoGgqgL62qUV4yKp7WNcXApCA6lPnK0qrw7XEICYyIqPF2lhYQMCJp8CVOYviWV5u74aYHvblIk0EO1AO54w5yYAXV1LWSN0hrq2dylnUA+uulJawjOgPIuhqw4+5aIsmISmitNLRHgkqaeeKXweuYEZgZNO/RQlwW15nE76Es7JiT7dw8pzboSDzK7Ncp6RqECWAWo8Qnpe23N0az54kNsGVcXxmJjb9HW5TF91F1/CLY55szDD1pFtokdV9SkCxcmNW3XTZsM4IeMVLRcACmGw+xtcpGVrSv4mGBAOC74lGPNhQvBbI/oaXcUBY9Pp205isYlmGV9tDSBLFT0qGgfnygQr1jU03g6BdDfklmarYLHM54O0nXw+P79tHro9iisO8ZK5cG+ZJ92kciiu3y304e+w3nw4o9Ood5Cw8P2uhUReQn9tNhgx4jYCLCYc6L4asqM+RlhRcScwvmEZiMxmZnIiTVL9Xy7TXkSjeE7uT9XX9o0n5NerNfr3CWuNkiS8o4VrJ9VcIC1Akgoa08BM+VGi743/IV/sUKT9j09YM1N3XuQqcUcPacmTcdDqX5EZpaXrBPETVk/YaDHNTGQRuhWnZl0="
+- secure: "QdZD0iwrBiMXTK7riZYv5gPYX2nlIf7Q7qgTOibviGWnzuQMZiAJHm5c28vDJtQV68XNTNTk+OdEagmXeWcILnN8JOWwW7dd4LSrvrZ2TLcnqI3ZXqqePtAX//Ze8a2+uD/G4/MHiK7V8KnE/h5HIJ0qogQC+5Ji9oJr+QtZTlAaklchzSOTR08JSfjTRm4d/cbCGqkDe1j3qkvA/rJ+759GVkG/73WYFC1tDuBtUV66DjVMrqY81q+vrOgqxjh0m9iNxnxx6/pOo8d0wXeN7rPDIShH8AHaS/BQDUDrmUl72GFCrvNShIAeYKR7K9AZhbo/wmhEtC6obAhYfZqGFleR6PTwsn68+jIK6HP56ARRayCZ5JU8745mxWx8H2F1kh+X3yVgN30L5wNmm/MBTp9VEwzH3LEQmRnDYGUUYFSl7lrEx9OCbKNnkO8dINPyzP7Ji8NRC1E57DqX6kVEeSdmKiz6uYodcofg/bHo4v9qJwxcvvmQYlP5tTNe5BsUnTjY+W1OgkLRN3FLCuL8l6O2zQhFvswMpjHPP0LFahAXJ/YLPGoQQ3xM2tK/GWjR8TSPjjWlo3UBdiOlSNkJCwzfZu8R3m+75ee8TIPErvR/ErYBNW7N6LzlfKgl+6UDB2bH83yeeeGBJW+pvjRi4SAT+jt1uJN/OQLw59eCg/c="
 
 
 #*******************************************************************************
