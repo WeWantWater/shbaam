@@ -1,259 +1,256 @@
 #!/usr/bin/env python
 import sys
-import os.path
-import subprocess
-import netCDF4
-import numpy
-import datetime
+from netCDF4 import Dataset, num2date, date2num
 import fiona
 import shapely.geometry
 import shapely.prepared
 import rtree
 import math
+import numpy
 import csv
+import datetime
 
+def createPointShp(input_shp, output_shp, num_lon, num_lat, lons, lats):
+    '''
+    Create a point with all GLDAS grid cells
+    '''
+    point_driver = input_shp.driver
+    point_crs = input_shp.crs
 
-# Parsing command line arguments, point_file can be made a command line arg too if needed
-netcdf_file = sys.argv[1]
-shape_file = sys.argv[2]
-point_file = sys.argv[3]
-output_csv = sys.argv[4]
-output_nc4 = sys.argv[5]
+    point_schema = {'geometry': 'Point',
+                 'properties': {'lon' : 'float',
+                                'lat' : 'float',
+                                'lon_index': 'int:4',
+                                'lat_index': 'int:4',
+                                }}
 
+    with fiona.open( output_shp, 'w', driver=point_driver, crs=point_crs, schema=point_schema) as pf:
+       for lon_index in range(num_lon):
+            longitude = lons[lon_index]
 
-# Opening files passed by command line args
-nc4_data = netCDF4.Dataset(netcdf_file, 'r', format = "NETCDF4")
-polygons = fiona.open(shape_file, 'r')
+            for lat_index in range(num_lat):
+                latitude = lats[lat_index]
 
-# Assigning easier variable names to commonly accessed nc4_data
-lon_values = nc4_data.variables["lon"]
-lat_values = nc4_data.variables["lat"]
-time_values = nc4_data.variables["time"]
-swe_values = nc4_data.variables['SWE']
-lon_dimension = len(nc4_data.dimensions["lon"])
-lat_dimension = len(nc4_data.dimensions["lat"])
-time_dimension = len(nc4_data.dimensions["time"])
+                pf_property = { 'lon': longitude, 'lat': latitude,
+                                'lon_index': lon_index, 'lat_index': lat_index,}
+                pf_geometry = shapely.geometry.mapping(
+                            shapely.geometry.Point((longitude, latitude)))
+                pf.write({
+                           'properties': pf_property,
+                           'geometry': pf_geometry,
+                         })
 
+    print('Success -- created a new shapefile')
 
-# Establishing required format definers to write a shape file.
-# The driver and crs are borrowed from the one provided for consistency.
-# The schema is kept simple to accept the co-ordinates of cells of interest
-point_file_driver = polygons.driver
-point_file_coordrefsys = polygons.crs
-point_file_schema = {'geometry': 'Point',
-          'properties': {'lon': 'float:4.4',
-                  'lat': 'float:4.4'}}
+def createRtreeIndex(pf):
+    idx = rtree.index.Index()
+    for point in pf:
+        point_id = int(point['id'])
+        point_bounds = shapely.geometry.shape(point['geometry']).bounds
+        idx.insert(point_id, point_bounds)
+    print('Success -- created rtree')
+    return idx
 
- 
-print("Creating points shape file")
+def findInterest(pol, pf, idx):
+    total = 0
+    interest_lon = []
+    interest_lat = []
 
-# Writing points shape file which holds a point for every combination 
-# (thus 2 for loops) of latitude and longitude that exists in the nc4 file
-# provided. These points can later be used to retrieve further data from
-# the .nc4 file once the relevant points are filtered.
-with fiona.open(point_file, 'w', driver = point_file_driver,
-            crs = point_file_coordrefsys,
-            schema = point_file_schema) as points:
-  for lon_index in range(lon_dimension):
-    longitude = lon_values[lon_index]
-    for lat_index in range(lat_dimension):
-      latitude = lat_values[lat_index]
-      schema_properties = {"lon": longitude,
-                  "lat": latitude}
-      schema_geometry = shapely.geometry.mapping(
-                shapely.geometry.Point((longitude, latitude)))
-      points.write({"properties": schema_properties,
-                  "geometry": schema_geometry,})
+    for polygon in pol:
+        polygon_geo = shapely.geometry.shape(polygon['geometry'])
+        prepared_polygon = shapely.prepared.prep( polygon_geo )
+        for pf_id in [int(i) for i in list(idx.intersection(polygon_geo.bounds))]:
+            point = pf[pf_id]
+            point_bounds = shapely.geometry.shape(point['geometry'])
+            if prepared_polygon.contains(point_bounds):
+                #print('cell:', pf_id)
+                interest_lon.append( (point['properties']['lon_index'], point['properties']['lon']) )
+                interest_lat.append( (point['properties']['lat_index'], point['properties']['lat']) )
+                total += 1
 
-print("Success - points created")
+    print('The total cells found: ' + str(total) )
+    print('The longitude of the cells: ' + str([i[1] for i in interest_lon]) )
+    print('The lattitude of the cells: '+ str([i[1] for i in interest_lat]) )
+    return total, interest_lon, interest_lat
 
-print("Creating rtree for points")
+def findAvg(var, total, interest_lon, interest_lat, time_steps):
+    #var: the nc4.variables that you want to get for average such as swe..
+    print('--Find long-term mean for each intersecting GRACE grid cell--')
+    avg = [0.0] * total
+    for cell_index in range(total):
+        lon_index = interest_lon[cell_index][0]
+        lat_index = interest_lat[cell_index][0]
+        for time in range(time_steps):
+            avg[cell_index] = avg[cell_index] + var[time, lat_index, lon_index]
 
-# Opening newly created point_file to produce an rtree index
-points = fiona.open(point_file, 'r')
+    avg = [i / time_steps for i in avg]
+    print('--long-term mean:' + str(avg)+'--')
+    return avg
 
-# Loading points into an rtree index with the shapely default value 
-# for bounds. The index assists in solving for intersections.
-index = rtree.index.Index()
-for point in points:
-  point_id = int(point['id'])
-  shape = shapely.geometry.shape(point['geometry'])
-  index.insert(point_id, shape.bounds)
+def calculateSurfaceArea(total, num_lat, interest_lat, lon_step, lat_step):
+    areas = [0] * total
+    for cell_index in range(total):
+        areas[ cell_index ] = 6371000*math.radians(lat_step) \
+                                    *6371000*math.radians(lon_step)\
+                                    *math.cos(math.radians(interest_lat[cell_index][1]))
+    print('area for each interest cell: ' + str(areas))
+    return areas
 
-print("Tree has been created")
+def anomalyTimeseries(var, var_factor, avg, time_steps, total, interest_lon, interest_lat, areas):
+    print('Compute storage anomaly timeseries')
+    anomalies = []
+    total_area = sum(areas)
+    for time in range(time_steps):
+        anomaly_in_time = 0
+        for cell_index in range(total):
+            lon_index = interest_lon[cell_index][0]
+            lat_index = interest_lat[cell_index][0]
+            area = areas[cell_index]
+            long_term_mean = avg[cell_index]
 
-print("Solving for grid cells of interest")
+            anomaly_in_area = ( var[time, lat_index, lon_index] \
+                                - long_term_mean) / var_factor * area
+            anomaly_in_time += anomaly_in_area
+        anomalies.append(var_factor * anomaly_in_time / total_area)
 
-total_interest_cells = 0
-interest_longitudes = []
-interest_latitudes = []
+    avgT = numpy.average(anomalies)
+    maxT = numpy.max(anomalies)
+    minT = numpy.min(anomalies)
+    print('- Average of time series: '+str(avgT))
+    print('- Maximum of time series: '+str(maxT))
+    print('- Minimum of time series: '+str(minT))
 
+    return anomalies
 
-# Checking every polygon in the shapefile provided for any intersections 
-# with the points that were loaded into the rtree index above. If there 
-# are intersections we check that the point actually lies within the
-# polygon, because the bounds are a default value and thus it is possible
-# a point outside of our area of interest intersects with the bounds of
-# the polygon. If a point's default bounds intersect with the polygon's and
-# the point lies within the polygon, it is added as a locator for the cell 
-# of interest
-for polygon in polygons:
-  poly_geom = shapely.geometry.shape(polygon['geometry'])
-  prep_geom = shapely.prepared.prep(poly_geom)
-  for point_id in [int(x) for x in list(index.intersection(poly_geom.bounds))]:
-    point = points[point_id]
-    point_geom = shapely.geometry.shape(point['geometry'])
-    if prep_geom.contains(point_geom):
-      point_lon = point["properties"]['lon']
-      point_lat = point["properties"]["lat"]
-      interest_longitudes.append(point_lon)
-      interest_latitudes.append(point_lat)
-      total_interest_cells += 1
+def createTimes(times):
+    dates = num2date(times[:], units=times.units, calendar=times.calendar)
+    time_stamps = []
+    for i in dates:
+        d = datetime.datetime.strptime(str(i), '%Y-%m-%d %H:%M:%S')
+        time_stamps.append(d.strftime('%m/%d/%Y'))
+    return time_stamps
 
-print("Done Solving, found the following:")
-print("Number of grid cells of interest: " + str(total_interest_cells))
-print("Latitudes of interest:", interest_latitudes)
-print("Longitude of interest:", interest_longitudes)
+def outputCSV(output_file, fieldnames, times, anomalies_dict):
+    with open(output_file, mode='w') as csvfile:
+        writer = csv.DictWriter(csvfile, dialect='excel', fieldnames=fieldnames)
+        dates = createTimes(times)
+        writer.writeheader()
+        for i in range(len(dates)):
+            d = dict()
+            d[fieldnames[0]] = dates[i]
+            for j in range(1, len(fieldnames)):
+                d[fieldnames[j]] = anomalies_dict[fieldnames[j]][i]
+            writer.writerow(d)
+    csvfile.close()
+    print('Success -- creating csv file')
 
+def outputNC(output_file, nc4_file, total, interest_lon, interest_lat, time_steps, var_list, avg_dict):
+    print('Writing new nc4 file')
+    nc4_out = Dataset(output_file, 'w', format='NETCDF4')
 
+    #copying dimentions
+    for (name, dim) in nc4_file.dimensions.items():
+        nc4_out.createDimension(name, len(dim) if not dim.isunlimited() else None)
 
-print("Solving for long term means for values of SWE across the cells of interest")
-# Previously, the actual values for interest latitude and longitude were solved for.
-# However, the indices of the values relative to the nc4 data file are required to 
-# extract values for SWE. Eg: extracting the SWE value at 179.5 W, 59.5 S is accessed
-# by the index [0, 0] because the indices for the example lon, lat are 0. 
-# Here, the indices for the values of interest are extracted from the nc4 data file.
-int_lat_indices = []
-int_lon_indices = []
-for index in range(total_interest_cells):
-  int_lon_indices.append((lon_values[:]).tolist().index(interest_longitudes[index]))
-  int_lat_indices.append((lat_values[:]).tolist().index(interest_latitudes[index]))
+    #copying variables
+    for (name, value) in nc4_file.variables.items():
+        nc4_vars = nc4_out.createVariable(name, value.datatype, value.dimensions)
+        nc4_vars.setncatts(nc4_file[name].__dict__)
+        if name in {"lat", "lon", "time"}:
+            nc4_out[name][:] = nc4_file[name][:]
 
+    dt = datetime.datetime.utcnow()
+    dt = dt.replace(microsecond=0)
 
-# Using the indices solved for above, the relevant SWE values at every available time
-# step are averaged and compiled into a list. 
-long_term_means = [0] * total_interest_cells
-for index in range(total_interest_cells):
-     lon_index = int_lon_indices[index]
-     lat_index = int_lat_indices[index]
-     for time_step in range(time_dimension):
-          long_term_means[index] = (long_term_means[index] +
-                                  swe_values[time_step,lat_index,lon_index])
-long_term_means = [x / time_dimension for x in long_term_means]
+    nc4_out.Conventions='CF-1.6'
+    nc4_out.title=''
+    nc4_out.institution=''
+    nc4_out.history='date created: '+ dt.isoformat() +'+00:00'
+    nc4_out.references='https://github.com/c-h-david/shbaam/'
+    nc4_out.comment=''
+    nc4_out.featureType='timeSeries'
 
+    for var in var_list:
+        for i in range(total):
+            lon_index, lat_index = interest_lon[i][0],interest_lat[i][0]
+            long_term_mean = avg_dict[var][i]
+            for time in range(time_steps):
+                nc4_out[var][time,lat_index,lon_index] = nc4_file.variables[var][time,lat_index,lon_index] - long_term_mean
+    nc4_out.close()
+    print("Success -- creating nc4 file")
 
-# The areas of the cells of interest can be evaluated independently based on the
-# span of every longitudinal and latitudinal value. A smaller step size implies
-# smaller available cells. The total_area variable represents the entire area across
-# all cells and is used to determine the numeric impact of a change over the whole 
-# land mass of interest. 
-longitude_step_size = abs(lon_values[1] - lon_values[0])
-latitude_step_size = abs(lat_values[1] - lat_values[0])
-areas= []
-for lat_index in int_lat_indices:
-     latitude = lat_values[lat_index]
-     areas.append((6371000*math.radians(latitude_step_size) *             
-                           6371000*math.radians(longitude_step_size) *
-                           math.cos(math.radians(latitude))))
-total_area = sum(areas)
+if __name__ == "__main__":
+    files = sys.argv[1:]
+    """
+    files[0]: concatenating netCDF4 files
+    files[1]: given shapefile ('../input/SERVIR_STK/Nepal.shp')
+    files[2]: output shapefile with all grid cells from nc4
+    files[3]: output csv file
+    files[4]: output nc file
+    files[5]: specify the variables
+    """
+    #open netCDF4 file
+    nc4_file = Dataset(files[0], 'r', format="NETCDF4") #concatenating files
 
+    num_lon = len(nc4_file.dimensions['lon'])
+    num_lat = len(nc4_file.dimensions['lat'])
+    time_steps = len(nc4_file.dimensions['time'])
 
-# Now that we have the area of each grid cell and the average value for the 
-# snow water equivalent present, we can calculate the change of swe in each 
-# cell over the time span available and relative to the total area we're 
-# interested in. 
-################################### BASED ON MEETING WITH DAVID
-# we're looking for the height of swe over the given area (mm)
-#*************
-anomalies=[]
-for time_step in range(time_dimension):
-     anomaly_in_time = 0
-     for index in range(total_interest_cells):
-          lon_index = int_lon_indices[index]
-          lat_index = int_lat_indices[index]
-          area = areas[index]
-          long_term_mean = long_term_means[index]
-          anomaly_in_area = ((swe_values[time_step,lat_index,lon_index] - 
-                            long_term_mean)/100 * area)
-          anomaly_in_time += anomaly_in_area
-     anomalies.append(100 * anomaly_in_time / total_area)
+    lons = nc4_file.variables['lon']
+    lats = nc4_file.variables['lat']
+    times = nc4_file.variables['time']
 
+    lon_step = abs(lons[1] - lons[0])
+    lat_step = abs(lats[1] - lats[0])
 
+    all_vars = []
+    dimensional = ["lon", "lat", "time"]
+    for var in nc4_file.variables.keys():
+        if var.lower() not in dimensional:
+            all_vars.append(var)
 
-print('Writing CSV file')
-# Using a predetermined datetime as a zero, time stamps are created by 
-# adding an existing time to the zero. The time stamps are used to write
-# their corresponding data into one row on the excel sheet. 
-time_stamp_zero = datetime.datetime.strptime('2002-04-01T00:00:00',                
-                                         '%Y-%m-%dT%H:%M:%S')
-time_stamps = []
-for time_step in range(time_dimension):
-     delta_t = datetime.timedelta(hours = time_values[time_step])
-     time_stamp = (time_stamp_zero + delta_t).strftime('%m/%d/%Y')
-     time_stamps.append(time_stamp)
+    unit_factors = {"mm": 1000, "kg/m2": 1000, "cm": 100, "dm": 10, "m": 1, "km": .001}
 
-# Writing excel sheet with timestamped data
-with open(output_csv, 'wb') as csvfile:
-     csvwriter = csv.writer(csvfile, dialect = 'excel')
-     for time_step in range(time_dimension):
-          row = [time_stamps[time_step],anomalies[time_step]] 
-          csvwriter.writerow(row) 
+    #read polygon shapefile
+    polygon = fiona.open(files[1],'r')
+    point_file = files[2]
 
+    createPointShp(polygon, point_file, num_lon, num_lat, lons, lats)
 
+    #open newly created point_file
+    pf = fiona.open(point_file, 'r')
 
-print("Writing new nc4 file")
-SWE_nc4 = netCDF4.Dataset(output_nc4, 'w', format="NETCDF4")
+    #create spatial index for the bounds of each point
+    idx = createRtreeIndex(pf)
 
-# Setting the global attributes for the new nc4 file. 
-# Metadata format and values kept consistent with available example. 
-dt=datetime.datetime.utcnow()
-dt=dt.replace(microsecond=0)
-vsn=subprocess.Popen('bash ../version.sh',                                     
-                     stdout=subprocess.PIPE,shell=True).communicate()
-vsn=vsn[0]
-vsn=vsn.rstrip()
-SWE_nc4.Conventions='CF-1.6'
-SWE_nc4.title=''
-SWE_nc4.institution=''
-SWE_nc4.source='SHBAAM: '+vsn+', GLDAS_VIC: '+os.path.basename(netcdf_file)   
-SWE_nc4.history='date created: '+dt.isoformat()+'+00:00'
-SWE_nc4.references='https://github.com/c-h-david/shbaam/'
-SWE_nc4.comment=''
-SWE_nc4.featureType='timeSeries'
+    total_interest, interest_lon, interest_lat = findInterest(polygon, pf, idx)
 
+    #calculate surface area for each interest cell
+    areas = calculateSurfaceArea(total_interest, num_lat, interest_lat, lon_step, lat_step)
 
-# Setting Dimensions based on nc4 file 
-for dName, dSize in nc4_data.dimensions.items():
-  SWE_nc4.createDimension(dName, (None if dSize.isunlimited() else len(dSize)))
+    #find long-term mean for swe
+    if len(files) > 5:
+        var_list= files[5:]
+    else:
+        var_list = all_vars
+    avg_dict = dict()
+    anomalies_dict = dict()
+    for var in var_list:
+        vals = nc4_file.variables[var] #all values in nc4_file
+        var_factor = unit_factors[nc4_file[var].units]
+        avg = findAvg(vals, total_interest, interest_lon, interest_lat, time_steps)
+        anomalies = anomalyTimeseries(vals, var_factor, avg, time_steps, total_interest, interest_lon, interest_lat, areas)
+        avg_dict[var] = avg
+        anomalies_dict[var] = anomalies
 
-# Setting Variable Attributes and Setting values for Latitude and Longitude
-for vName, vValue in nc4_data.variables.items():
-  ref = SWE_nc4.createVariable(vName, vValue.datatype, vValue.dimensions)
-  SWE_nc4[vName].setncatts(nc4_data[vName].__dict__)
-  if vName in ["lat", "lon", "time"]:
-    SWE_nc4[vName][:] = nc4_data[vName][:]
+    output_csv = files[3]
+    fieldname = ['date'] + var_list
+    #print(fieldname)
+    outputCSV(output_csv, fieldname, times, anomalies_dict)
 
+    output_nc = files[4]
+    outputNC(output_nc, nc4_file, total_interest, interest_lon, interest_lat, time_steps, var_list, avg_dict)
 
-# Writting values into new nc4 file using only the values extracted from
-# our grid cells of interest.
-for index in range(total_interest_cells):
-     lon_index=int_lon_indices[index]
-     lat_index=int_lat_indices[index]
-     long_term_mean=long_term_means[index]
-     for time_step in range(time_dimension):
-          SWE_nc4["SWE"][time_step,lat_index,lon_index] = (
-            swe_values[time_step,lat_index,lon_index] - long_term_mean)
-
-
-
-# Closing nc4 files
-nc4_data.close()
-SWE_nc4.close()
-
-
-print('Check some computations')
-
-print('- Average of time series: '+str(numpy.average(anomalies)))
-print('- Maximum of time series: '+str(numpy.max(anomalies)))
-print('- Minimum of time series: '+str(numpy.min(anomalies)))
-
+    nc4_file.close()
+    polygon.close()
+    pf.close()
