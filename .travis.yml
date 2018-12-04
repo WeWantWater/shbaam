@@ -1,32 +1,12 @@
-#*******************************************************************************
-#.travis.yml
-#*******************************************************************************
-
-#Purpose:
-#Travis CI is a hosted continuous integration service, that is, it allows 
-#running code directly from a repository and checking that the code acts as 
-#expected. The purpose of the .travis.yml file is to give instructions to Travis 
-#CI on how to do the work.
-#Author:
-#Cedric H. David, 2017-2018
-
-
-#*******************************************************************************
-#System specifications for Travis CI
-#*******************************************************************************
 matrix:
   include:
     - os: linux
       language: generic
+      python:
+      - "2.7"
       sudo: required
-
-    - os: linux
-      sudo: required
-      language: python
-  
     - os: osx
       language: generic
-      python: "2.7"
   allow_failures:
     - os: osx
 
@@ -51,12 +31,9 @@ before_install:
 #-------------------------------------------------------------------------------
 #Specific to Linux
 #-------------------------------------------------------------------------------
-- if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo apt-get update      ; fi
-- if [[ "$TRAVIS_OS_NAME" == "linux" ]]; sudo apt-get install python3  ; fi
-#------------------- above suppose to include python 3 env delete if not working 
-
 - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then apt-get --version             ; fi
 - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo apt-get install -y $(grep -v -E '(^#|^$)' requirements.apt) ; fi
+
 
 #-------------------------------------------------------------------------------
 #Specific to OSX
@@ -96,8 +73,3 @@ script:
 - cd ./tst/
 - echo $TST_PUB_DWNL && $TST_PUB_DWNL
 - echo $TST_PUB_REPR && $TST_PUB_REPR
-
-
-#*******************************************************************************
-#End
-#*******************************************************************************
